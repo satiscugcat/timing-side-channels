@@ -1,0 +1,87 @@
+Inductive PartialOrder {A: Type} (rel: A -> A -> Type) : Type:= 
+| PartialOrderConstructor (rel: A -> A -> Prop) (rel_refl: forall (a: A), rel a a) (rel_trans: forall (a b c: A), rel a b -> rel a c -> rel a c) (rel_antisym: forall (a b: A), (a = b -> False) -> rel a b -> rel b a -> False).
+
+Inductive Join {A: Type} (rel: A -> A -> Type) : A -> A -> A -> Type :=
+| JoinConstructor (pOrderProof: PartialOrder rel) (a b join: A) (pleft: rel a join) (pright : rel b join) (pleast: forall ub, rel a ub -> rel b ub -> rel join ub): Join rel a b join
+.
+Inductive EX {A: Type} (P: A -> Type) : Type :=
+| EX_intro (x: A) : P x -> EX  P.
+
+
+Inductive JoinSemilattice {A: Type} (rel: A -> A -> Type): Type:=
+| JoinSemilatticeConstructor (OrdProof: PartialOrder rel)
+    (JoinProof: forall (a b: A), EX (fun (join: A) => Join rel a b join)) .
+
+Inductive Var: Type :=
+| VarConstructor (n: nat).
+
+Inductive Level: Type :=
+| LevelConstructor (n: nat).
+
+Definition level_eq_dec: forall (a b: Level), {a = b} + {a <> b}.
+Proof.
+  decide equality; decide equality.
+Qed.
+
+Definition var_eq_dec: forall (a b: Var), {a = b} + {a <> b}.
+Proof.
+  decide equality; decide equality.
+Qed.
+
+Inductive BinOp:= | Plus | Minus | Add | Divide | And | Or.
+
+Definition total_map (A: Type) := Var -> A.
+
+Definition t_empty {A: Type} (v: A) : total_map A := (fun _ => v).
+
+Definition t_update {A: Type} (m: total_map A) (x: Var) (v: A) := fun x' => if var_eq_dec x x' then v else m x'.
+
+
+
+Inductive Primitive :=
+| TruePrimitive
+| FalsePrimitive
+| NatPrimitive (n: nat).
+
+Inductive Expression :=
+| PrimitiveExpression (prim: Primitive) (k: Level)
+| VarExpression (x: Var)
+| CommaExpression (e1 e2: Expression)
+| BinOpExpression (binop: BinOp) (e1 e2: Expression).
+
+Inductive Command :=
+| SkipCommand
+| AssignmentCommand (x: Var) (e: Expression)
+| SequenceCommand (c1 c2: Command)
+| IfCommand (e: Expression) (c1 c2: Command)
+| WhileCommand (e: Expression) (c: Command).
+
+
+
+Inductive Timing :=
+| CONST
+| VAR
+| OPER (oper: BinOp)
+| COMMA.
+Definition timing_eq_dec: forall (a b: Timing), {a=b} + {a<>b}.
+Proof.
+  decide equality; decide equality.
+Qed.
+
+Definition TimingMap := Timing -> nat.
+
+Definition SingleMap (t: Timing): TimingMap := fun t' =>
+  if timing_eq_dec t t'
+  then 1
+  else 0.
+
+Print SingleMap.
+Inductive ExpressionBigstep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}: Expression -> Level -> TimingMap -> Primitive -> Level -> Type:=
+   
+.
+
+Search ExpressionBigstep.
+                  
+
+
+  
