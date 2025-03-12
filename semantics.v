@@ -1,5 +1,7 @@
+From Coq Require Import Program.Equality.
+From Coq Require Import Lists.List.
 Inductive PartialOrder {A: Type} (rel: A -> A -> Type) : Type:= 
-| PartialOrderConstructor (rel: A -> A -> Prop) (rel_refl: forall (a: A), rel a a) (rel_trans: forall (a b c: A), rel a b -> rel a c -> rel a c) (rel_antisym: forall (a b: A), (a = b -> False) -> rel a b -> rel b a -> False).
+| PartialOrderConstructor  (rel_refl: forall (a: A), rel a a) (rel_trans: forall (a b c: A), rel a b -> rel b c -> rel a c) (rel_antisym: forall (a b: A), a <> b -> rel a b -> rel b a -> False).
 
 Inductive Join {A: Type} (rel: A -> A -> Type) : A -> A -> A -> Type :=
 | JoinConstructor (pOrderProof: PartialOrder rel) (a b join: A) (pleft: rel a join) (pright : rel b join) (pleast: forall ub, rel a ub -> rel b ub -> rel join ub): Join rel a b join
@@ -106,13 +108,12 @@ Definition AddTiming (t1 t2: TimingMap): TimingMap := fun x => t1 x + t2 x.
 Notation "a ++ b" := (AddTiming a b) (at level 60, right associativity).
 
 Inductive ExpressionBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}: Expression -> MemStore -> Level -> TimingMap -> Primitive -> Level -> Type :=
-| ConsBigStep (prim: Primitive) {pc k j: Level} (joinProof: Join rel pc k j) (mu: MemStore): @ExpressionBigStep binop_eval rel latticeProof (PrimitiveExpression prim k) mu pc (SingleTiming CONST) prim j
+| ConsBigStep (prim: Primitive) {pc k j: Level} (joinProof: Join rel pc k j) (mu: MemStore): ExpressionBigStep (PrimitiveExpression prim k) mu pc (SingleTiming CONST) prim j
                                                                                                                
-| VarBigStep (x: Var) (mu: MemStore) (pc: Level): @ExpressionBigStep binop_eval rel latticeProof (VarExpression x) mu pc (SingleTiming VAR) (fst (mu x)) (snd (mu x))
+| VarBigStep(x: Var) (mu: MemStore) (pc j: Level) (joinProof: Join rel pc (snd (mu x)) j): ExpressionBigStep (VarExpression x) mu pc (SingleTiming VAR) (fst (mu x)) j
                                                                     
-| OperBigStep (oper: BinOp) {mu: MemStore}{e1 e2: Expression} {pc k1 k2 joink1k2: Level} {T1 T2: TimingMap} {n1 n2: Primitive} (p1: @ExpressionBigStep binop_eval rel latticeProof e1 mu pc T1 n1 k1) (p2: @ExpressionBigStep binop_eval rel latticeProof e2 mu pc T2 n2 k2) (joinProof: Join rel k1 k2 joink1k2): @ExpressionBigStep binop_eval rel latticeProof (BinOpExpression oper e1 e2) mu pc (T1 ++ T2 ++ (SingleTiming (OPER oper))) (binop_eval oper n1 n2) joink1k2
-                                                                                                                                                                                                                                                                           
-| CommaBigStep {e1 e2: Expression} {mu: MemStore} {pc k1 k2: Level} {t1 t2: TimingMap} {n1 n2: Primitive} (p1: @ExpressionBigStep binop_eval rel latticeProof e1 mu pc t1 n1 k1) (p2: @ExpressionBigStep binop_eval rel latticeProof e2 mu pc t2 n2 k2): @ExpressionBigStep binop_eval rel latticeProof (CommaExpression e1 e2) mu pc (t1 ++ t2 ++ (SingleTiming COMMA)) n2 k2.
+| OperBigStep (oper: BinOp) {mu: MemStore}{e1 e2: Expression} {pc k1 k2 joink1k2: Level} {T1 T2: TimingMap} {n1 n2: Primitive} (p1: ExpressionBigStep  e1 mu pc T1 n1 k1) (p2: ExpressionBigStep  e2 mu pc T2 n2 k2) (joinProof: Join rel k1 k2 joink1k2): ExpressionBigStep  (BinOpExpression oper e1 e2) mu pc (T1 ++ T2 ++ (SingleTiming (OPER oper))) (binop_eval oper n1 n2) joink1k2                                                                                                                                                                                            
+| CommaBigStep {e1 e2: Expression} {mu: MemStore} {pc k1 k2: Level} {t1 t2: TimingMap} {n1 n2: Primitive} (p1: ExpressionBigStep  e1 mu pc t1 n1 k1) (p2: ExpressionBigStep  e2 mu pc t2 n2 k2): ExpressionBigStep (CommaExpression e1 e2) mu pc (t1 ++ t2 ++ (SingleTiming COMMA)) n2 k2.
 
 
 
@@ -127,7 +128,7 @@ Inductive CommandBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primiti
                    
 | WhileFBigStep {e: Expression} {mu: MemStore} {pc k: Level} {T: TimingMap} (c: Command) {n: Primitive}
     (expressionEvalProof: (@ExpressionBigStep binop_eval rel latticeProof e mu pc T n k))
-    (falseProof: n = TruePrimitive -> False)
+    (falseProof: n <> TruePrimitive)
   : CommandBigStep (WhileCommand e c) mu pc (T++(SingleTiming WHILEF)) mu
       
 |  WhileTBigStep {e: Expression} {mu mu' mu'': MemStore} {pc k: Level} {T1 T2 T3: TimingMap} {c: Command} 
@@ -183,26 +184,348 @@ with DebranchBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} 
   : DebranchBigStep (Debranch (IfCommand e c1 c2) n l) mu pc (SingleTiming DEB_IF_HIGH ++ T1 ++ T2 ++ T3 ++ T4) mu''
 | DebIfLowBigStep
     {e: Expression} {mu mu': MemStore} {pc k l: Level} {n: bool} {n': Primitive} {T1 T2: TimingMap} (c1 c2: Command)
-    (eProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T1 n' k)
+    (eProof: @ExpressionBigStep binop_eval rel latticeProof e mu l T1 n' k)
     
-    (relProof: rel k pc)
+    (relProof: rel k l)
     (commandProof: let d := match n' with | TruePrimitive => (Debranch c1 n l) | _ => (Debranch c2 n l) end in
                    DebranchBigStep d mu pc T2 mu')
   : DebranchBigStep (Debranch (IfCommand e c1 c2) n l) mu pc (SingleTiming DEB_IF_LOW ++ T1 ++ T2) mu'
 | DebWhileFBigStep {e: Expression} {mu: MemStore} {pc k l: Level} {T: TimingMap} (c: Command) {n: bool} {n': Primitive}
     (expressionEvalProof: (@ExpressionBigStep binop_eval rel latticeProof e mu pc T n' k))
-    (falseProof: n' = TruePrimitive -> False)
+    (falseProof: n' <> TruePrimitive)
   : DebranchBigStep (Debranch (WhileCommand e c) n l) mu pc (T++(SingleTiming DEB_WHILEF)) mu
       
-|  DebWhileTBigStep {e: Expression} {mu mu' mu'': MemStore} {pc k l kl kpc: Level} {T1 T1' T2 T3: TimingMap} {c: Command} {n: bool}
+|  DebWhileTBigStep {e: Expression} {mu mu' mu'': MemStore} {pc l kl kpc: Level} {T1 T1' T2 T3: TimingMap} {c: Command} {n: bool}
      (expressionEvalProofl: (@ExpressionBigStep binop_eval rel latticeProof e mu l T1 TruePrimitive kl))
      (expressionEvalProofpc: (@ExpressionBigStep binop_eval rel latticeProof e mu pc T1' TruePrimitive kpc))
      (commandProof: DebranchBigStep (Debranch c n l) mu kpc T2 mu')
      (restLoopProof: DebranchBigStep (Debranch (WhileCommand e c) n l) mu' pc T3 mu'')
-     (lowProof: rel k l)
+     (lowProof: rel kl l)
   : DebranchBigStep (Debranch (WhileCommand e c) n l) mu pc (SingleTiming DEB_WHILET ++ T1 ++ T1' ++ T2 ++ T3) mu''.
 
                   
+Inductive ValueObservationalEquivalent {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}: Primitive -> Level -> Level -> Primitive -> Level -> Type :=
+| LowProof {n1 n2: Primitive} {l1 l2 l: Level} (nEq: n1 = n2) (lEq: l1 = l2) : ValueObservationalEquivalent n1 l1 l n2 l2
+| HighProof (n1 n2: Primitive) {l1 l2 l: Level} (l1High: rel l1 l -> False) (l2High: rel l2 l -> False): ValueObservationalEquivalent n1 l1 l n2 l2.
 
+Definition MemStoreObservationalEquivalent {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} (mu1: MemStore) (l: Level) (mu2: MemStore): Type := forall (x: Var), @ValueObservationalEquivalent rel latticeProof (fst (mu1 x)) (snd (mu1 x)) l  (fst (mu2 x)) (snd (mu2 x)).
+
+  
+Lemma JoinEq: forall {rel: Level -> Level -> Type} (latticeProof: JoinSemilattice rel) {a b j1 j2: Level}, Join rel a b j1 -> Join rel a b j2 -> j1 = j2.
+Proof.
+  intros. destruct X; destruct X0; destruct latticeProof; destruct OrdProof. destruct (level_eq_dec join join0).
+  - assumption.
+  -  specialize (pleast join0 pleft0 pright0); specialize (pleast0 join pleft pright). specialize (rel_antisym join join0 n pleast pleast0). contradiction.
+Qed.
+Lemma JoinSym: forall {rel: Level -> Level -> Type} (latticeProof: JoinSemilattice rel) {a b join: Level}, Join rel a b join -> Join rel b a join.
+Proof.
+  intros. destruct X. constructor; (try assumption).
+  - intros. apply (pleast ub X0 X).
+Qed.
+
+Lemma JoinHigh: forall {rel: Level -> Level -> Type} (latticeProof: JoinSemilattice rel) {H L X joinHX: Level}, (Join rel H X joinHX) -> (rel H L -> False) -> (rel joinHX L -> False).
+Proof.
+  intros. destruct X0; destruct latticeProof; destruct OrdProof. apply H0. apply (rel_trans _ _ _ pleft X1).
+Qed.
+  
+Lemma ExpressionLabelLowerBound: forall  {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {e: Expression} {mu: MemStore} {l k: Level} {T: TimingMap}  {n: Primitive} (proof: @ExpressionBigStep binop_eval rel latticeProof e mu l T n k), rel l k. 
+Proof.
+  intros. induction proof.
+  - destruct joinProof. assumption.
+  - destruct joinProof. assumption.
+  - destruct latticeProof. destruct OrdProof. destruct joinProof. apply (rel_trans _ _ _  IHproof1 pleft).
+  - assumption.
+Qed.
+
+Lemma ExpressionLabelLowestBound: forall  {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {e: Expression} {mu: MemStore} {l k: Level} {T: TimingMap}  {n: Primitive} (proof: @ExpressionBigStep binop_eval rel latticeProof e mu l T n k), rel k l -> l = k.
+Proof.
+  intros. pose proof (ExpressionLabelLowerBound proof). destruct (level_eq_dec l k).
+  - assumption.
+  - destruct latticeProof; destruct OrdProof. pose proof (rel_antisym _ _ n0 X0 X). contradiction.
+Qed.
+
+
+Lemma ExpressionHigherContext: forall {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {e: Expression} {mu: MemStore} {l kl h kh: Level} {T1 T2: TimingMap}  {n1 n2: Primitive} (proof1: @ExpressionBigStep binop_eval rel latticeProof e mu l T1 n1 kl) (proof2: @ExpressionBigStep binop_eval rel latticeProof e mu h T2 n2 kh), rel l h -> rel kl l ->  kh = h.
+Proof.
+  intros. pose proof (ExpressionLabelLowestBound proof1 X0). subst. clear X0.
+
+  dependent induction e; dependent destruction proof2; dependent destruction proof1.
+  - assert(Joinpc0: Join rel pc0 k pc0). {
+      destruct latticeProof; destruct OrdProof.
+        assert (ubProof: forall ub, rel pc0 ub -> rel k ub -> rel pc0 ub) by (intros; assumption).
+        destruct joinProof; destruct joinProof0.
+        constructor; auto. apply (rel_trans _ _ _ pright X).
+    } 
+
+    apply (JoinEq latticeProof joinProof0 Joinpc0).
+  - assert(Joinpc0: Join rel pc0 (snd (mu x)) pc0). {
+      destruct latticeProof; destruct OrdProof.
+        assert (ubProof: forall ub, rel pc0 ub -> rel (snd (mu x)) ub -> rel pc0 ub) by (intros; assumption).
+        destruct joinProof; destruct joinProof0.
+        constructor; auto. apply (rel_trans _ _ _ pright X).
+    } apply (JoinEq latticeProof joinProof0 Joinpc0).
+  - 
+    apply (IHe2 _ _ _ _ _ _ _ _ proof1_2 proof2_2 X).
+  -
+    destruct joinProof.
+    pose proof (ExpressionLabelLowestBound proof1_1 pleft).
+    pose proof (ExpressionLabelLowestBound proof1_2 pright).
+    subst a b. clear pleft pleast pright.
+
+    pose proof (IHe1 _ _ _ _ _ _ _ _ proof1_1 proof2_1 X).
+    pose proof (IHe2 _ _ _ _ _ _ _ _ proof1_2 proof2_2 X).
+    subst k0 k3.
+    assert (Join rel pc0 pc0 pc0). {
+      destruct latticeProof; destruct OrdProof.
+      constructor; auto; apply rel_refl.
+    } apply (JoinEq latticeProof joinProof0 X0).
+
+Qed.
+    
+
+
+Lemma LowerRelWorse: forall {rel: Level -> Level -> Type} (latticeProof: JoinSemilattice rel) {LL L H: Level}, rel LL L -> (rel H L -> False) -> (rel H LL -> False).
+Proof.
+  intros; destruct latticeProof; destruct OrdProof. apply H0. apply (rel_trans _ _ _ X0 X).
+Qed.
+
+
+  
+Lemma MemStoreEquivalenceImplExpressionEquivalence:
+  forall  {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {e: Expression} {mu1 mu2: MemStore} {l k1 k2: Level} {n1 n2: Primitive} {T1 T2: TimingMap}
+          (p1: @ExpressionBigStep binop_eval rel latticeProof e mu1 l T1 n1 k1)
+          (p2: @ExpressionBigStep binop_eval rel latticeProof e mu2 l T2 n2 k2)
+          (memEqProof: @MemStoreObservationalEquivalent rel latticeProof mu1 l mu2),
+    @ValueObservationalEquivalent rel latticeProof n1 k1 l n2 k2.
+Proof.
+  intros.
+
+
+  dependent induction e; dependent destruction p1; dependent destruction p2.
+  
+  - 
+    pose proof (JoinEq latticeProof joinProof0 joinProof).
+    subst j. constructor; auto.
+
+  -  specialize (memEqProof x). destruct memEqProof.
+    + subst. pose proof (JoinEq latticeProof joinProof joinProof0). subst. constructor; auto.
+    + specialize (JoinHigh latticeProof (JoinSym latticeProof joinProof) l1High);
+        specialize (JoinHigh latticeProof (JoinSym latticeProof joinProof0) l2High); intros. apply (HighProof n1 n2 H0 H).
+
+  - specialize (IHe2 mu mu0 pc k0 k3 n0 n3 t2 t3). apply IHe2; assumption.
+  -  specialize (IHe1 _ _ _ _ _ _ _ _ _  p1_1 p2_1 memEqProof); specialize (IHe2 _ _ _ _ _ _ _ _ _  p1_2 p2_2 memEqProof). destruct IHe1; destruct IHe2.
+     + subst. pose proof (JoinEq latticeProof joinProof joinProof0). subst. constructor; auto.
+     + subst. specialize (JoinHigh latticeProof (JoinSym latticeProof joinProof) l1High);
+         specialize (JoinHigh latticeProof (JoinSym latticeProof joinProof0) l2High); intros. apply (HighProof _ _ H0 H).
+     + subst. specialize (JoinHigh latticeProof  joinProof l1High);
+         specialize (JoinHigh latticeProof  joinProof0 l2High); intros. apply (HighProof _ _ H0 H).
+     + subst. specialize (JoinHigh latticeProof  joinProof l1High);
+         specialize (JoinHigh latticeProof  joinProof0 l2High); intros. apply (HighProof _ _ H0 H).
+Qed.
+
+Lemma TrickleDownEquivalence: forall {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {k l: Level} {mu1 mu2: MemStore} (downProof: rel l k) (highProof: @MemStoreObservationalEquivalent rel latticeProof mu1 k mu2), @MemStoreObservationalEquivalent rel latticeProof mu1 l mu2.
+Proof.
+  intros. unfold MemStoreObservationalEquivalent. intros. destruct (highProof x).
+  - subst. constructor; auto.
+  - specialize (LowerRelWorse latticeProof downProof l1High); specialize (LowerRelWorse latticeProof downProof l2High); intros.
+    apply (HighProof _ _ H0 H).
+Qed.
+
+
+
+
+(* Trying to establish a consistent way to deal with inductive proofds on WhileCommands and Debranch(WhileCommand)s*)
+
+(*First doing it on WhileCommands, corresponding stuff on Debranch(WhileCommands)s will follow. *)
+
+Inductive LoopLengthCommand {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} : Level -> MemStore -> Expression -> Command -> MemStore -> nat -> Type :=
+| LoopLengthCommand0 {mu: MemStore} {e: Expression} {n: Primitive} {pc k: Level} {T: TimingMap}
+    (c: Command)
+    (expressionEvalProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T n k)
+    (primProof: n <> TruePrimitive)
+  : LoopLengthCommand pc mu e c mu 0
+
+| LoopLengthCommandSn {mu mu' mu'': MemStore} {e: Expression} {n: nat} {pc k: Level} {Te Tc Tw: TimingMap} {c: Command}
+    (expressionProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc Te TruePrimitive k)
+    (commandProof: @CommandBigStep binop_eval rel latticeProof c mu pc Tc mu')
+    (whileProof: @CommandBigStep binop_eval rel latticeProof (WhileCommand e c) mu' pc Tw mu'')
+    (indProof: LoopLengthCommand pc mu' e c mu'' n)
+    (relProof: rel k pc)
+  : LoopLengthCommand pc mu e c mu'' (S n).
+
+Lemma AlwaysLoopLengthCommand {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
+  forall {e: Expression} {c: Command} {mu mu': MemStore} {pc: Level} {T: TimingMap},
+    @CommandBigStep binop_eval rel latticeProof (WhileCommand e c) mu pc T mu' ->
+    EX (fun n => @LoopLengthCommand binop_eval rel latticeProof pc mu e c mu' n).
+Proof.
+  intros.
+  dependent induction X.
+  - apply (EX_intro _ 0 (LoopLengthCommand0  c expressionEvalProof falseProof)).
+  - clear IHX1. assert (WhileCommand e c = WhileCommand e c) by auto.  specialize (IHX2 H); clear H;  destruct IHX2. apply (EX_intro _ (S x) (LoopLengthCommandSn expressionEvalProof X1 X2 l lowProof)).
+Qed.
+
+Lemma MemStoreEquivalenceImplLoopLengthCommandEq {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
+  forall {e: Expression} {c: Command} {mu1 mu1' mu2 mu2': MemStore}  {pc: Level}  {n1 n2: nat}
+         (cMemEq: forall  (mu1 mu2 mu1' mu2' : MemStore) (pc : Level) (T1 T2 : TimingMap),
+        @CommandBigStep binop_eval rel latticeProof c  mu1 pc T1 mu1' ->
+        @CommandBigStep binop_eval rel latticeProof c mu2 pc T2 mu2' ->
+        @MemStoreObservationalEquivalent rel latticeProof mu1 pc mu2 -> @MemStoreObservationalEquivalent rel latticeProof mu1' pc mu2'),
+    @LoopLengthCommand binop_eval rel latticeProof pc mu1 e c mu1' n1 ->
+    @LoopLengthCommand binop_eval rel latticeProof pc mu2 e c mu2' n2 ->
+    @MemStoreObservationalEquivalent rel latticeProof mu1 pc mu2 ->
+    n1 = n2.
+Proof.
+  intros.  generalize dependent mu2. generalize dependent mu2'. generalize dependent mu1'. generalize dependent mu1. dependent induction n1; intros; dependent destruction X; dependent destruction X0.
+    + reflexivity.
+    + pose proof (MemStoreEquivalenceImplExpressionEquivalence expressionEvalProof expressionProof X1). destruct H; contradiction.
+    + pose proof (MemStoreEquivalenceImplExpressionEquivalence expressionProof expressionEvalProof X1). destruct H; subst; contradiction.
+    + pose proof (cMemEq _ _ _ _ _ _ _  commandProof commandProof0 X1).
+      specialize (IHn1 _ cMemEq _ _ X _ _  X0 X2).
+      subst. reflexivity.
+Qed.
+                       
+    
+(* Same but for Debranch *)
+
+Inductive LoopLengthDebranch {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} : Level -> MemStore -> Expression -> Command -> bool -> Level -> MemStore -> nat -> Type :=
+| LoopLengthDebranch0 {mu: MemStore} {e: Expression} {n': Primitive} {pc k: Level} {T: TimingMap}
+    (c: Command) (n: bool) (l: Level)
+    (expressionEvalProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T n' k)
+    (primProof: n' <> TruePrimitive)
+  : LoopLengthDebranch pc mu e c n l mu 0
+
+| LoopLengthDebranchSn {mu mu' mu'': MemStore} {e: Expression} {x: nat} {pc l kpc kl: Level} {Te Te' Tc Tw: TimingMap} {c: Command} {n: bool}
+    (expressionEvalProofl: (@ExpressionBigStep binop_eval rel latticeProof e mu l Te TruePrimitive kl))
+    (expressionEvalProofpc: (@ExpressionBigStep binop_eval rel latticeProof e mu pc Te' TruePrimitive kpc))
+    (commandProof: @DebranchBigStep binop_eval rel latticeProof (Debranch c n l) mu kpc Tc mu')
+    (restLoopProof: @DebranchBigStep binop_eval rel latticeProof (Debranch (WhileCommand e c) n l) mu' pc Tw mu'')
+    (indProof: LoopLengthDebranch pc mu' e c n l mu'' x)
+    (lowProof: rel kl l)
+    
+  : LoopLengthDebranch pc mu e c n l mu'' (S x).
+
+Lemma AlwaysLoopLengthDebranch {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
+  forall {e: Expression} {c: Command} {n: bool} {mu mu': MemStore} {pc l: Level} {T: TimingMap},
+    @DebranchBigStep binop_eval rel latticeProof (Debranch (WhileCommand e c) n l) mu pc T mu' ->
+    EX (fun x => @LoopLengthDebranch binop_eval rel latticeProof pc mu e c n l mu' x).
+Proof.
+  intros.
+  dependent induction X.
+  - apply (EX_intro _ 0  (LoopLengthDebranch0  c n l expressionEvalProof falseProof)).
+  - clear IHX1. assert (Debranch (WhileCommand e c) n l = Debranch (WhileCommand e c) n l) by auto.  specialize (IHX2 H); clear H;  destruct IHX2. apply (EX_intro _ (S x) (LoopLengthDebranchSn expressionEvalProofl expressionEvalProofpc X1 X2 l0 lowProof)).
+Qed.
+
+Lemma MemStoreEquivalenceImplLoopLengthDebranchEq {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
+  forall {e: Expression} {c: Command} {n: bool} {mu1 mu1' mu2 mu2': MemStore}  {pc l: Level} {n1 n2: nat}
+         
+         (debcMemEq: forall (n : bool) (mu1 mu2 mu1' mu2' : MemStore) (pc l : Level) (T1 T2 : TimingMap),
+             @DebranchBigStep binop_eval rel latticeProof (Debranch c n l) mu1 pc T1 mu1' ->
+             @DebranchBigStep binop_eval rel latticeProof (Debranch c n l) mu2 pc T2 mu2' ->
+             @MemStoreObservationalEquivalent rel latticeProof mu1 pc mu2 -> rel l pc ->
+             @MemStoreObservationalEquivalent rel latticeProof mu1' pc mu2'),
+    rel l pc ->
+    @LoopLengthDebranch binop_eval rel latticeProof pc mu1 e c n l mu1' n1 ->
+    @LoopLengthDebranch binop_eval rel latticeProof pc mu2 e c n l mu2' n2 ->
+    @MemStoreObservationalEquivalent rel latticeProof mu1 pc mu2 ->
+    n1 = n2.
+Proof.
+  intros.  generalize dependent mu2. generalize dependent mu2'. generalize dependent mu1'. generalize dependent mu1. dependent induction n1; intros; dependent destruction X0; dependent destruction X1.
+    + reflexivity.
+    + assert (n' = TruePrimitive). {
+        
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence expressionEvalProof expressionEvalProofpc X2).
+        pose proof (ExpressionLabelLowestBound expressionEvalProofl lowProof); subst kl.
+        pose proof (ExpressionHigherContext expressionEvalProofl expressionEvalProofpc X). destruct latticeProof; destruct OrdProof. specialize (H0 (rel_refl l)). subst kpc.
+        dependent destruction H.
+        - auto.
+        -  specialize (l2High (rel_refl l0)). contradiction.
+      } contradiction.
+    +  assert (n' = TruePrimitive). {
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence expressionEvalProofpc expressionEvalProof X2).
+        pose proof (ExpressionLabelLowestBound expressionEvalProofl lowProof); subst kl.
+        pose proof (ExpressionHigherContext expressionEvalProofl expressionEvalProofpc X). destruct latticeProof; destruct OrdProof. specialize (H0 (rel_refl l)). subst kpc.
+        dependent destruction H.
+        - auto.
+        -  specialize (l1High (rel_refl l1)). contradiction.
+       } contradiction. 
+    +
+
+      pose proof (ExpressionLabelLowestBound expressionEvalProofl lowProof); subst kl;
+        pose proof (ExpressionLabelLowestBound expressionEvalProofl0 lowProof0); subst kl0; clear lowProof lowProof0;
+        pose proof (ExpressionHigherContext expressionEvalProofl expressionEvalProofpc X); destruct latticeProof; destruct OrdProof. specialize (H (rel_refl l)); subst kpc;
+        pose proof (ExpressionHigherContext expressionEvalProofl0 expressionEvalProofpc0 X).  specialize (H (rel_refl l)); subst kpc0.
+      
+      pose proof (debcMemEq _ _ _ _ _ _ _ _ _ commandProof commandProof0 X2 X).
+      specialize (IHn1 _ debcMemEq  X _ _ X0 _ _  X1 X3).
+      subst. reflexivity.
+Qed.
+                     
+(*
+  The main idea of defining these was to allow treating While Loops as an inductive object based on their loop length.
+ *)
+
+Theorem DebranchPreservesMemEq:
+  forall {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {c: Command} {n: bool} {mu1 mu2 mu1' mu2': MemStore} {pc l: Level} {T1 T2: TimingMap}
+         (p1: @DebranchBigStep binop_eval rel latticeProof (Debranch c n l) mu1 pc T1 mu1')
+         (p2: @DebranchBigStep binop_eval rel latticeProof (Debranch c n l) mu2 pc T2 mu2')
+         (memEq: @MemStoreObservationalEquivalent rel latticeProof mu1 pc mu2)
+         (l_rel_pc: rel l pc),
+    @MemStoreObservationalEquivalent rel latticeProof mu1' pc mu2'.
+Proof.
+  intros. dependent induction c.
+  
+  -  dependent destruction p1; dependent destruction p2. assumption.
+    
+  -  dependent destruction p1; dependent destruction p2. dependent destruction evalProof; dependent destruction evalProof0.  pose proof (MemStoreEquivalenceImplExpressionEquivalence eproof eproof0 memEq). unfold MemStoreObservationalEquivalent in *; unfold MemUpdate; unfold t_update. intros.
+    destruct (var_eq_dec x x0).
+    + simpl; assumption.
+    + clear n1. revert x0. assumption.
+
+  + dependent destruction evalProof; dependent destruction evalProof0.  pose proof (MemStoreEquivalenceImplExpressionEquivalence eproof eproof0 memEq). unfold MemStoreObservationalEquivalent in *; unfold MemUpdate; unfold t_update. intros. destruct (var_eq_dec x x0).
+    ++ simpl; assumption.
+    ++ clear n1. revert x0. assumption.
+
+  -  dependent destruction p1; dependent destruction p2. specialize (IHc1 _ _ _ _ _ _ _ _ _ p1_1 p2_1 memEq l_rel_pc). apply (IHc2 _ _ _ _ _ _ _ _ _ p1_2 p2_2 IHc1 l_rel_pc).
+
+  - dependent destruction p2; dependent destruction p1.
+    + admit.
+    + assert(k = kl). {
+        
+        pose proof (TrickleDownEquivalence l_rel_pc memEq).
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence eProof p0 X).
+        destruct H.
+        - assumption.
+        - contradiction.
+      } subst. contradiction.
+
+    + assert(k = kl). {
+        
+        pose proof (TrickleDownEquivalence l_rel_pc memEq).
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence p1 eProof  X).
+        destruct H.
+        - auto.
+        - contradiction.
+      } subst. contradiction.
+    + assert (n' = n'0 /\ k0 = k). {
+        pose proof (TrickleDownEquivalence l_rel_pc memEq).
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence eProof eProof0 X).
+        destruct H.
+        - split; auto.
+        - contradiction.
+      } destruct H. subst. destruct  n'0; subst; try (apply (IHc1 _ _ _ _ _ _ _ _ _ commandProof commandProof0 memEq l_rel_pc)); try (apply (IHc2 _ _ _ _ _ _ _ _ _ commandProof commandProof0 memEq l_rel_pc)).
+  - pose proof (AlwaysLoopLengthDebranch p1); pose proof (AlwaysLoopLengthDebranch p2). destruct X; destruct X0. Check @MemStoreEquivalenceImplLoopLengthDebranchEq.
+    pose proof (MemStoreEquivalenceImplLoopLengthDebranchEq IHc l_rel_pc l0 l1 memEq); subst x0. clear p2; clear p1. revert memEq. generalize dependent mu2'. revert mu2. generalize dependent mu1'. revert mu1. dependent induction x.
+    + intros. dependent destruction l0; dependent destruction l1. assumption.
+    + intros. dependent destruction l0; dependent destruction l1.
+
+      
+      pose proof (ExpressionLabelLowestBound expressionEvalProofl lowProof); subst kl.
+        pose proof (ExpressionLabelLowestBound expressionEvalProofl0 lowProof0); subst kl0; clear lowProof lowProof0.
+        pose proof (ExpressionHigherContext expressionEvalProofl expressionEvalProofpc l_rel_pc); destruct latticeProof; destruct OrdProof. specialize (H (rel_refl l)); subst kpc;
+          pose proof (ExpressionHigherContext expressionEvalProofl0 expressionEvalProofpc0 l_rel_pc);  specialize (H (rel_refl l)); subst kpc0.     
+        specialize (IHc _ _ _ _ _ _ _ _ _ commandProof commandProof0 memEq l_rel_pc).
+        apply (IHx _ _ l0 _ _ l1 IHc).
+Admitted.
+    
 
   
