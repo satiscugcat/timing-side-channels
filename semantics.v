@@ -144,11 +144,12 @@ Inductive CommandBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primiti
     (eqProof: ((snd (mu x)) = pc) \/ ((rel (snd (mu x)) pc) -> False))
   : CommandBigStep (AssnCommand x e) mu pc (SingleTiming ASSN ++ T) (MemUpdate mu x n k)
                    
-| IfHighBigStep {e: Expression} {mu mu': MemStore} {pc k: Level} {n: Primitive} {T1 T2: TimingMap} {n: Primitive} {c1 c2: Command}
-    (eProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T1 n k)
-    (debProof: DebranchBigStep (Debranch (IfCommand e c1 c2) true pc) mu pc T2 mu')
-    (relProof: rel k pc -> False)
-  : CommandBigStep (IfCommand e c1 c2) mu pc (SingleTiming IF_HIGH ++ T1 ++ T2) mu' 
+| IfHighBigStep {e: Expression} {mu mu' mu'': MemStore} {pc kpc: Level} {n: Primitive} {T1 T2 T3: TimingMap} {n: Primitive} {c1 c2: Command}
+    (eProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T1 n kpc)
+    (debProof1: DebranchBigStep (Debranch c1  (PrimToBool n) pc) mu kpc T2 mu')
+    (debProof2: DebranchBigStep (Debranch c2  (negb (PrimToBool n)) pc) mu' kpc T3 mu'')
+    (relProof: rel kpc pc -> False)
+  : CommandBigStep (IfCommand e c1 c2) mu pc (SingleTiming IF_HIGH ++ T1 ++ T2 ++ T3) mu'' 
                    
 | IfLowBigStep
     {e: Expression} {mu mu': MemStore} {pc k: Level} {n: Primitive} {T1 T2: TimingMap} (c1 c2: Command)
@@ -234,7 +235,18 @@ Lemma JoinHigh: forall {rel: Level -> Level -> Type} (latticeProof: JoinSemilatt
 Proof.
   intros. destruct X0; destruct latticeProof; destruct OrdProof. apply H0. apply (rel_trans _ _ _ pleft X1).
 Qed.
-  
+
+Lemma RelAlwaysRefl  {rel: Level -> Level -> Type} (latticeProof: JoinSemilattice rel) {l: Level}: (rel l l -> False) -> False.
+Proof.
+  intros. destruct latticeProof; destruct OrdProof. apply (H (rel_refl l)).
+Qed.
+Lemma NotRelImplNotEq: forall {rel: Level -> Level -> Type} (latticeProof: JoinSemilattice rel) {l1 l2: Level}, (rel l1 l2 -> False) -> l1 <> l2.
+Proof.
+  intros. destruct (level_eq_dec l1 l2).
+  - subst. destruct latticeProof; destruct OrdProof. specialize (H (rel_refl l2)). contradiction.
+  - assumption.
+Qed.
+
 Lemma ExpressionLabelLowerBound: forall  {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {e: Expression} {mu: MemStore} {l k: Level} {T: TimingMap}  {n: Primitive} (proof: @ExpressionBigStep binop_eval rel latticeProof e mu l T n k), rel l k. 
 Proof.
   intros. induction proof.
@@ -576,4 +588,56 @@ Proof.
 Qed.
     
 
-  
+Theorem CommandPreservesMemEq {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} :
+  forall  {c: Command} {mu1 mu2 mu1' mu2': MemStore} {pc: Level} {T1 T2: TimingMap}
+     (p1: @CommandBigStep binop_eval rel latticeProof c mu1 pc T1 mu1')
+     (p2: @CommandBigStep binop_eval rel latticeProof c mu2 pc T2 mu2')
+     (memEq: @MemStoreObservationalEquivalent rel latticeProof mu1 pc mu2),
+    @MemStoreObservationalEquivalent rel latticeProof mu1' pc mu2'.
+Proof.
+  intros. dependent induction c.
+  - dependent destruction p1; dependent destruction p2. assumption.
+  - dependent destruction p1; dependent destruction p2. unfold MemStoreObservationalEquivalent in *; unfold MemUpdate; unfold t_update. intros; destruct (var_eq_dec x0 x1).
+    + simpl. pose proof (MemStoreEquivalenceImplExpressionEquivalence eproof eproof0 memEq). assumption.
+    + specialize (memEq x1). assumption.
+  - dependent destruction p1; dependent destruction p2.
+    specialize (IHc1 _ _ _ _ _ _ _ p1_1 p2_1 memEq).
+    apply (IHc2 _ _ _ _ _ _ _ p1_2 p2_2 IHc1).
+  - dependent destruction p1; dependent destruction p2.
+    + assert (notRel: pc <> kpc) by (apply not_eq_sym; apply (NotRelImplNotEq latticeProof relProof)).
+      assert (notRel0: pc <> kpc0) by (apply not_eq_sym; apply (NotRelImplNotEq latticeProof relProof0)).
+      assert (low: rel pc kpc) by (apply (ExpressionLabelLowerBound eProof)).
+      assert (low0: rel pc kpc0) by (apply (ExpressionLabelLowerBound eProof0)).
+      pose proof (DebranchPreservesMemEq debProof1 debProof0 memEq low notRel low0 notRel0).
+      apply (DebranchPreservesMemEq debProof2 debProof3 X low notRel low0 notRel0).
+    + pose proof (ExpressionLabelLowestBound eProof0 relProof0); subst k.
+      assert (kpc = pc). {
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence eProof eProof0 memEq).
+        dependent destruction H.
+        - reflexivity.
+        - pose proof (RelAlwaysRefl latticeProof l2High). contradiction.
+      } subst. pose proof (RelAlwaysRefl latticeProof relProof). contradiction.
+    + pose proof (ExpressionLabelLowestBound eProof relProof); subst k.
+      assert (kpc = pc). {
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence eProof eProof0 memEq).
+        dependent destruction H.
+        - reflexivity.
+        - pose proof (RelAlwaysRefl latticeProof l1High). contradiction.
+      } subst. pose proof (RelAlwaysRefl latticeProof relProof0). contradiction.
+    + pose proof (ExpressionLabelLowestBound eProof relProof); subst k. pose proof (ExpressionLabelLowestBound eProof0 relProof0); subst k0.
+      assert (n=n0). {
+        pose proof (MemStoreEquivalenceImplExpressionEquivalence eProof eProof0 memEq).
+        dependent destruction H.
+        - reflexivity.
+        - pose proof (RelAlwaysRefl latticeProof l1High). contradiction.
+      } subst n0. destruct n;
+      try (apply (IHc1 _ _ _ _ _ _ _ commandProof commandProof0 memEq));
+        try (apply (IHc2 _ _ _ _ _ _ _  commandProof commandProof0 memEq)).
+  - pose proof (AlwaysLoopLengthCommand p1); (pose proof (AlwaysLoopLengthCommand p2)). destruct X as [n l1]. destruct X0 as [n1 l2]. clear p1; clear p2. pose proof (MemStoreEquivalenceImplLoopLengthCommandEq IHc l1 l2 memEq). subst n1. generalize dependent memEq. generalize dependent  mu2'; generalize dependent mu2; generalize dependent mu1'; generalize dependent mu1. dependent induction n; intros.
+    + dependent destruction l1; dependent destruction l2. assumption.
+    + dependent destruction l1; dependent destruction l2.
+      specialize (IHc _ _ _ _ _ _ _ commandProof commandProof0 memEq).
+      apply (IHn _ _ l1 _ _ l2 IHc).
+Qed.
+      
+        
