@@ -1,7 +1,5 @@
 From Coq Require Import Program.Equality.
 
-Definition x := fun x => fun y => x + y.
-Check x.
 Inductive PartialOrder {A: Type} (rel: A -> A -> Type) : Type:= 
 | PartialOrderConstructor  (rel_refl: forall (a: A), rel a a) (rel_trans: forall (a b c: A), rel a b -> rel b c -> rel a c) (rel_antisym: forall (a b: A), a <> b -> rel a b -> rel b a -> False).
 
