@@ -1,10 +1,18 @@
-From Coq Require Import Program.Equality.
+From Stdlib Require Import Program.Equality.
 
 Inductive PartialOrder {A: Type} (rel: A -> A -> Type) : Type:= 
-| PartialOrderConstructor  (rel_refl: forall (a: A), rel a a) (rel_trans: forall (a b c: A), rel a b -> rel b c -> rel a c) (rel_antisym: forall (a b: A), a <> b -> rel a b -> rel b a -> False).
+| PartialOrderConstructor  (rel_refl: forall (a: A), rel a a)
+    (rel_trans: forall (a b c: A), rel a b -> rel b c -> rel a c)
+    (rel_antisym: forall (a b: A), a <> b -> rel a b -> rel b a -> False).
 
 Inductive Join {A: Type} (rel: A -> A -> Type) : A -> A -> A -> Type :=
-| JoinConstructor (pOrderProof: PartialOrder rel) (a b join: A) (pleft: rel a join) (pright : rel b join) (pleast: forall ub, rel a ub -> rel b ub -> rel join ub): Join rel a b join
+| JoinConstructor
+    (pOrderProof: PartialOrder rel)
+    (a b join: A)
+    (pleft: rel a join)
+    (pright : rel b join)
+    (pleast: forall ub, rel a ub -> rel b ub -> rel join ub):
+  Join rel a b join
 .
 Inductive EX {A: Type} (P: A -> Type) : Type :=
 | EX_intro (x: A) : P x -> EX  P.
@@ -274,9 +282,9 @@ Proof.
     } 
 
     apply (JoinEq latticeProof joinProof0 Joinpc0).
-  - assert(Joinpc0: Join rel pc0 (snd (mu x0)) pc0). {
+  - assert(Joinpc0: Join rel pc0 (snd (mu x)) pc0). {
       destruct latticeProof; destruct OrdProof.
-        assert (ubProof: forall ub, rel pc0 ub -> rel (snd (mu x0)) ub -> rel pc0 ub) by (intros; assumption).
+        assert (ubProof: forall ub, rel pc0 ub -> rel (snd (mu x)) ub -> rel pc0 ub) by (intros; assumption).
         destruct joinProof; destruct joinProof0.
         constructor; auto. apply (rel_trans _ _ _ pright X).
     } apply (JoinEq latticeProof joinProof0 Joinpc0).
@@ -329,7 +337,7 @@ Proof.
     pose proof (JoinEq latticeProof joinProof0 joinProof).
     subst j. constructor; auto.
 
-  -  specialize (memEqProof x0). destruct memEqProof.
+  -  specialize (memEqProof x). destruct memEqProof.
     + subst. pose proof (JoinEq latticeProof joinProof joinProof0). subst. constructor; auto.
     + specialize (JoinHigh latticeProof (JoinSym latticeProof joinProof) l1High);
         specialize (JoinHigh latticeProof (JoinSym latticeProof joinProof0) l2High); intros. apply (HighProof n1 n2 H0 H).
@@ -345,7 +353,7 @@ Qed.
 
 Lemma TrickleDownEquivalence: forall {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {k l: Level} {mu1 mu2: MemStore} (downProof: rel l k) (highProof: @MemStoreObservationalEquivalent rel latticeProof mu1 k mu2), @MemStoreObservationalEquivalent rel latticeProof mu1 l mu2.
 Proof.
-  intros. unfold MemStoreObservationalEquivalent. intros. destruct (highProof x0).
+  intros. unfold MemStoreObservationalEquivalent. intros. destruct (highProof x).
   - subst. constructor; auto.
   - specialize (LowerRelWorse latticeProof downProof l1High); specialize (LowerRelWorse latticeProof downProof l2High); intros.
     apply (HighProof _ _ H0 H).
@@ -358,9 +366,9 @@ Lemma EqMemStoreImplEqPrimTim {binop_eval: BinOp -> Primitive -> Primitive -> Pr
 Proof.
   intros. dependent induction e; dependent destruction X.
   - remember latticeProof; destruct j0. destruct (JoinProof pc' k).
-    apply (EX_intro _ x0 (ConstBigStep prim j0 mu)).
-  - remember latticeProof; destruct j0. destruct (JoinProof pc' (snd (mu x0))). apply (EX_intro _ x1). constructor; assumption.
-  - specialize (IHe1 _ _ _ _ _ pc' X1). specialize (IHe2 _ _ _ _ _ pc' X2). destruct IHe1; destruct IHe2. remember latticeProof; destruct j. destruct (JoinProof x0 x1). apply (EX_intro _ x2). apply (OperBigStep binop e e0 j).
+    apply (EX_intro _ x (ConstBigStep prim j0 mu)).
+  - remember latticeProof; destruct j0. destruct (JoinProof pc' (snd (mu x))). apply (EX_intro _ x0). constructor; assumption.
+  - specialize (IHe1 _ _ _ _ _ pc' X1). specialize (IHe2 _ _ _ _ _ pc' X2). destruct IHe1; destruct IHe2. remember latticeProof; destruct j. destruct (JoinProof x x0). apply (EX_intro _ x1). apply (OperBigStep binop e e0 j).
 Qed.
 
 
@@ -391,7 +399,7 @@ Proof.
   intros.
   dependent induction X.
   - apply (EX_intro _ 0 (LoopLengthCommand0  c expressionEvalProof falseProof)).
-  - clear IHX1. assert (WhileCommand e c = WhileCommand e c) by auto.  specialize (IHX2 H); clear H;  destruct IHX2. apply (EX_intro _ (S x0) (LoopLengthCommandSn expressionEvalProof X1 X2 l lowProof)).
+  - clear IHX1. assert (WhileCommand e c = WhileCommand e c) by auto.  specialize (IHX2 H); clear H;  destruct IHX2. apply (EX_intro _ (S x) (LoopLengthCommandSn expressionEvalProof X1 X2 l lowProof)).
 Qed.
 
 Lemma MemStoreEquivalenceImplLoopLengthCommandEq {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
@@ -442,7 +450,7 @@ Proof.
   dependent induction X.
   -  apply (EX_intro _ 0  (LoopLengthDebranch0  c n pc expressionEvalProof falseProof)).
   - clear IHX1. assert (Debranch (WhileCommand e c) n l = Debranch (WhileCommand e c) n l) by auto.  specialize (IHX2 H); clear H;  destruct IHX2.
-    apply (EX_intro _ (S x0) (LoopLengthDebranchSn expressionEvalProof X1 X2 l0 lowProof)).
+    apply (EX_intro _ (S x) (LoopLengthDebranchSn expressionEvalProof X1 X2 l0 lowProof)).
 Qed.
 
 Lemma MemStoreEquivalenceImplLoopLengthDebranchEq {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
@@ -510,17 +518,17 @@ Proof.
   
   -  dependent destruction p1; dependent destruction p2. assumption.
     
-  -  dependent destruction p1; dependent destruction p2; unfold MemStoreObservationalEquivalent in *; unfold MemUpdate; unfold t_update; intros; destruct (var_eq_dec x0 x1); auto; simpl; subst.
+  -  dependent destruction p1; dependent destruction p2; unfold MemStoreObservationalEquivalent in *; unfold MemUpdate; unfold t_update; intros; destruct (var_eq_dec x x0); auto; simpl; subst.
        
      + pose proof (ExpressionLabelLowerBound evalProof); pose proof (ExpressionLabelLowerBound evalProof0). Check @BiggerFish. pose proof (@BiggerFish rel latticeProof _ _ _ l_not_pc1 l_rel_pc1 X);  pose proof (@BiggerFish rel latticeProof _ _ _ l_not_pc2 l_rel_pc2 X0). apply (HighProof _ _ H H0).
 
-     + pose proof (ExpressionLabelLowerBound evalProof); pose proof (@BiggerFish rel latticeProof _ _ _ l_not_pc1 l_rel_pc1 X); clear X. assert (H0: rel (snd (mu0 x1)) l -> False). {
+     + pose proof (ExpressionLabelLowerBound evalProof); pose proof (@BiggerFish rel latticeProof _ _ _ l_not_pc1 l_rel_pc1 X); clear X. assert (H0: rel (snd (mu0 x0)) l -> False). {
          destruct eqProof0.
          + subst. remember latticeProof; destruct j; destruct OrdProof. apply (rel_antisym _ _ l_not_pc2 l_rel_pc2).
          + Check @LowerRelWorse. apply (@LowerRelWorse rel latticeProof _ _ _ l_rel_pc2 H0).
        } apply (HighProof _ _ H H0).
 
-     + pose proof (ExpressionLabelLowerBound evalProof0); pose proof (@BiggerFish rel latticeProof _ _ _ l_not_pc2 l_rel_pc2 X); clear X. assert (H0: rel (snd (mu x1)) l -> False). {
+     + pose proof (ExpressionLabelLowerBound evalProof0); pose proof (@BiggerFish rel latticeProof _ _ _ l_not_pc2 l_rel_pc2 X); clear X. assert (H0: rel (snd (mu x0)) l -> False). {
          destruct eqProof.
          + subst. remember latticeProof; destruct j; destruct OrdProof. apply (rel_antisym _ _ l_not_pc1 l_rel_pc1).
          + Check @LowerRelWorse. apply (@LowerRelWorse rel latticeProof _ _ _ l_rel_pc1 H0).
@@ -573,7 +581,7 @@ Proof.
         try (apply (IHc2 _ _ _ _ _ _ _ _ _ _ _ commandProof commandProof0 memEq l_rel_pc1 l_not_pc1 l_rel_pc2 l_not_pc2)).
 
   - pose proof (AlwaysLoopLengthDebranch p1); pose proof (AlwaysLoopLengthDebranch p2). destruct X; destruct X0. Check @MemStoreEquivalenceImplLoopLengthDebranchEq.
-    pose proof (MemStoreEquivalenceImplLoopLengthDebranchEq IHc l_rel_pc1 l_not_pc1 l_rel_pc2 l_not_pc2 l0 l1 memEq); subst x1. clear p2; clear p1. revert memEq. generalize dependent mu2'. revert mu2. generalize dependent mu1'. revert mu1. revert T2; revert T1. dependent induction x0.
+    pose proof (MemStoreEquivalenceImplLoopLengthDebranchEq IHc l_rel_pc1 l_not_pc1 l_rel_pc2 l_not_pc2 l0 l1 memEq); subst x0. clear p2; clear p1. revert memEq. generalize dependent mu2'. revert mu2. generalize dependent mu1'. revert mu1. revert T2; revert T1. dependent induction x.
     + intros. dependent destruction l0; dependent destruction l1. assumption.
     + intros. dependent destruction l0; dependent destruction l1.
 
@@ -581,7 +589,7 @@ Proof.
       pose proof (ExpressionLabelLowestBound expressionEvalProof lowProof); subst kl.
         pose proof (ExpressionLabelLowestBound expressionEvalProof0 lowProof0); subst kl0; clear lowProof lowProof0.    
         specialize (IHc _ _ _ _ _ _ _ _ _ _ _ commandProof commandProof0 memEq l_rel_pc1 l_not_pc1 l_rel_pc2 l_not_pc2).
-        apply (IHx0 _ _ _ _ l0 _ _ l1 IHc).
+        apply (IHx _ _ _ _ l0 _ _ l1 IHc).
 Qed.
     
 
@@ -594,9 +602,9 @@ Theorem CommandPreservesMemEq {binop_eval: BinOp -> Primitive -> Primitive -> Pr
 Proof.
   intros. dependent induction c.
   - dependent destruction p1; dependent destruction p2. assumption.
-  - dependent destruction p1; dependent destruction p2. unfold MemStoreObservationalEquivalent in *; unfold MemUpdate; unfold t_update. intros; destruct (var_eq_dec x0 x1).
+  - dependent destruction p1; dependent destruction p2. unfold MemStoreObservationalEquivalent in *; unfold MemUpdate; unfold t_update. intros; destruct (var_eq_dec x x0).
     + simpl. pose proof (MemStoreEquivalenceImplExpressionEquivalence eproof eproof0 memEq). assumption.
-    + specialize (memEq x1). assumption.
+    + specialize (memEq x0). assumption.
   - dependent destruction p1; dependent destruction p2.
     specialize (IHc1 _ _ _ _ _ _ _ p1_1 p2_1 memEq).
     apply (IHc2 _ _ _ _ _ _ _ p1_2 p2_2 IHc1).
