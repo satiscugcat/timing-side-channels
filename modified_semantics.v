@@ -107,7 +107,7 @@ Qed.
 Definition TimingList := list Timing.
 
 Definition SingleTiming (t: Timing): TimingList :=
-  [t].
+  cons t nil .
 Definition AddTiming (t1 t2: TimingList): TimingList :=  t1 ++ t2.
 
 Notation "a +++ b" := (AddTiming a b) (at level 65, left associativity).
