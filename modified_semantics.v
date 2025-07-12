@@ -353,15 +353,6 @@ Proof.
          specialize (JoinHigh latticeProof  joinProof0 l2High); intros. apply (HighProof _ _ H0 H).
 Qed.
     
-  
-Lemma TrickleDownEquivalence: forall {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {k l: Level} {mu1 mu2: MemStore} (downProof: rel l k) (highProof: @MemStoreObservationalEquivalent rel latticeProof mu1 k mu2), @MemStoreObservationalEquivalent rel latticeProof mu1 l mu2.
-Proof.
-  intros. unfold MemStoreObservationalEquivalent. intros. destruct (highProof x).
-  - subst. constructor; auto.
-  - specialize (LowerRelWorse latticeProof downProof l1High); specialize (LowerRelWorse latticeProof downProof l2High); intros.
-    apply (HighProof _ _ H0 H).
-Qed.
-
 
 (* Trying to establish a consistent way to deal with inductive proofds on WhileCommands and Debranch(WhileCommand)s*)
 
