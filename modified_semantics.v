@@ -18,7 +18,6 @@ Inductive Join {A: Type} (rel: A -> A -> Type) : A -> A -> A -> Type :=
 Inductive EX {A: Type} (P: A -> Type) : Type :=
 | EX_intro (x: A) : P x -> EX  P.
 
-Inductive FALSE :=.
 Inductive JoinSemilattice {A: Type} (rel: A -> A -> Type): Type:=
 | JoinSemilatticeConstructor (OrdProof: PartialOrder rel)
     (JoinProof: forall (a b: A), EX (fun (join: A) => Join rel a b join)) .
@@ -270,57 +269,12 @@ Proof.
   - destruct latticeProof; destruct OrdProof. pose proof (rel_antisym _ _ n0 X0 X). contradiction.
 Qed.
 
-
-Lemma ExpressionHigherContext: forall {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {e: Expression} {mu: MemStore} {l kl h kh: Level} {T1 T2: TimingList}  {n1 n2: Primitive} (proof1: @ExpressionBigStep binop_eval rel latticeProof e mu l T1 n1 kl) (proof2: @ExpressionBigStep binop_eval rel latticeProof e mu h T2 n2 kh), rel l h -> rel kl l ->  kh = h.
-Proof.
-  intros. pose proof (ExpressionLabelLowestBound proof1 X0). subst. clear X0.
-
-  dependent induction e; dependent destruction proof2; dependent destruction proof1.
-  - assert(Joinpc0: Join rel pc0 k pc0). {
-      destruct latticeProof; destruct OrdProof.
-        assert (ubProof: forall ub, rel pc0 ub -> rel k ub -> rel pc0 ub) by (intros; assumption).
-        destruct joinProof; destruct joinProof0.
-        constructor; auto. apply (rel_trans _ _ _ pright X).
-    } 
-
-    apply (JoinEq latticeProof joinProof0 Joinpc0).
-  - assert(Joinpc0: Join rel pc0 (snd (mu x)) pc0). {
-      destruct latticeProof; destruct OrdProof.
-        assert (ubProof: forall ub, rel pc0 ub -> rel (snd (mu x)) ub -> rel pc0 ub) by (intros; assumption).
-        destruct joinProof; destruct joinProof0.
-        constructor; auto. apply (rel_trans _ _ _ pright X).
-    } apply (JoinEq latticeProof joinProof0 Joinpc0).
-  -
-    destruct joinProof.
-    pose proof (ExpressionLabelLowestBound proof1_1 pleft).
-    pose proof (ExpressionLabelLowestBound proof1_2 pright).
-    subst a b. clear pleft pleast pright.
-
-    pose proof (IHe1 _ _ _ _ _ _ _ _ proof1_1 proof2_1 X).
-    pose proof (IHe2 _ _ _ _ _ _ _ _ proof1_2 proof2_2 X).
-    subst k0 k3.
-    assert (Join rel pc0 pc0 pc0). {
-      destruct latticeProof; destruct OrdProof.
-      constructor; auto; apply rel_refl.
-    } apply (JoinEq latticeProof joinProof0 X0).
-
-Qed.
-    
-
-
-Lemma LowerRelWorse: forall {rel: Level -> Level -> Type} (latticeProof: JoinSemilattice rel) {LL L H: Level}, rel LL L -> (rel H L -> False) -> (rel H LL -> False).
-Proof.
-  intros; destruct latticeProof; destruct OrdProof. apply H0. apply (rel_trans _ _ _ X0 X).
-Qed.
-
-
 Lemma BiggerFish {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}: forall {LL L H: Level},
     LL <> L -> rel LL L -> rel L H -> (rel H LL -> False).
 Proof.
   intros. destruct latticeProof; destruct OrdProof.  destruct (level_eq_dec L H).
   - subst. apply (rel_antisym _ _ H0 X X1).
   - specialize (rel_trans _ _ _ X0 X1). apply (rel_antisym _ _ H0 X rel_trans).
-
 Qed.
   
 Lemma MemStoreEquivalenceImplExpressionEquivalence:
@@ -354,9 +308,7 @@ Proof.
 Qed.
     
 
-(* Trying to establish a consistent way to deal with inductive proofds on WhileCommands and Debranch(WhileCommand)s*)
-
-(*First doing it on WhileCommands, corresponding stuff on Debranch(WhileCommands)s will follow. *)
+(* Establishing method to do induction on loops. *)
 
 Inductive LoopLengthCommand {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} : Level -> MemStore -> Expression -> Command -> TimingList -> MemStore -> nat -> Type :=
 | LoopLengthCommand0 {mu: MemStore} {e: Expression} {n: Primitive} {pc k: Level} {T: TimingList}
@@ -478,13 +430,7 @@ Proof.
       specialize (IHx1 _ debcMemEq X H X0 H0 _ _ _ _  X1 _ _  X2 X4).
       subst. reflexivity.
 Qed.
-                     
-(*
-  The main idea of defining these was to allow treating While Loops as an inductive object based on their loop length.
- *)
-(*
-Lemma HighDebranchImplLowMemEq {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} : forall {c: command}  {n: bool} {l H L: Level} {mu1 mu1' mu2 mu2': MemStore} {T: TimingList}
- *)
+               
 
 Theorem DebranchPreservesMemEq {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} : forall  {c: Command} {n1 n2: bool} {mu1 mu2 mu1' mu2': MemStore} {l pc1 pc2: Level} {T1 T2: TimingList}
          (p1: @DebranchBigStep binop_eval rel latticeProof (Debranch c n1 l) mu1 pc1 T1 mu1')
