@@ -63,7 +63,7 @@ Definition MemStore := Var -> Primitive * Level.
 Definition MemUpdate (mu: MemStore) (x: Var) (p: Primitive) (k: Level) := t_update mu x (p, k).
 
 Inductive Expression :=
-| PrimitiveExpression (prim: Primitive) (k: Level)
+| PrimitiveExpression (prim: Primitive)
 | VarExpression (x: Var)
 | BinOpExpression (binop: BinOp) (e1 e2: Expression).
 
@@ -81,19 +81,19 @@ Definition PrimToBool (n: Primitive) : bool := match n with | TruePrimitive => t
 
 Inductive Timing :=
 | CONST
-| VAR
+| VAR (v: Var)
 | OPER (oper: BinOp)
 | COMMA
 | SKIP
 | SEQ
 | WHILEF
-| ASSN
+| ASSN (v: Var)
 | IF_HIGH
 | IF_LOW
 | WHILET
 
 | DEB_SKIP
-| DEB_ASSN
+| DEB_ASSN (v: Var)
 | DEB_SEQ
 | DEB_IF_HIGH
 | DEB_IF_LOW
@@ -101,7 +101,7 @@ Inductive Timing :=
 | DEB_WHILEF.
 Definition timing_eq_dec: forall (a b: Timing), {a=b} + {a<>b}.
 Proof.
-  decide equality; decide equality.
+  repeat (decide equality).
 Qed.
 
 Definition TimingList := list Timing.
@@ -113,9 +113,9 @@ Definition AddTiming (t1 t2: TimingList): TimingList :=  t1 ++ t2.
 Notation "a +++ b" := (AddTiming a b) (at level 65, left associativity).
 
 Inductive ExpressionBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}: Expression -> MemStore -> Level -> TimingList -> Primitive -> Level -> Type :=
-| ConstBigStep (prim: Primitive) {pc k j: Level} (joinProof: Join rel pc k j) (mu: MemStore): ExpressionBigStep (PrimitiveExpression prim k) mu pc (SingleTiming CONST) prim j
+| ConstBigStep (prim: Primitive) {pc: Level} (mu: MemStore): ExpressionBigStep (PrimitiveExpression prim) mu pc (SingleTiming CONST) prim pc
                                                                                                                
-| VarBigStep(x: Var) (mu: MemStore) (pc j: Level) (joinProof: Join rel pc (snd (mu x)) j): ExpressionBigStep (VarExpression x) mu pc (SingleTiming VAR) (fst (mu x)) j
+| VarBigStep(x: Var) (mu: MemStore) (pc j: Level) (joinProof: Join rel pc (snd (mu x)) j): ExpressionBigStep (VarExpression x) mu pc (SingleTiming (VAR x)) (fst (mu x)) j
                                                                     
 | OperBigStep (oper: BinOp) {mu: MemStore}{e1 e2: Expression} {pc k1 k2 joink1k2: Level} {T1 T2: TimingList} {n1 n2: Primitive} (p1: ExpressionBigStep  e1 mu pc T1 n1 k1) (p2: ExpressionBigStep  e2 mu pc T2 n2 k2) (joinProof: Join rel k1 k2 joink1k2): ExpressionBigStep  (BinOpExpression oper e1 e2) mu pc (T1 +++ T2 +++ (SingleTiming (OPER oper))) (binop_eval oper n1 n2) joink1k2.
 
@@ -133,25 +133,25 @@ Inductive CommandBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primiti
 | WhileFBigStep {e: Expression} {mu: MemStore} {pc k: Level} {T: TimingList} (c: Command) {n: Primitive}
     (expressionEvalProof: (@ExpressionBigStep binop_eval rel latticeProof e mu pc T n k))
     (falseProof: n <> TruePrimitive)
-  : CommandBigStep (WhileCommand e c) mu pc (SingleTiming WHILEF +++ T ) mu
+  : CommandBigStep (WhileCommand e c) mu pc (T +++ SingleTiming WHILEF) mu
       
 |  WhileTBigStep {e: Expression} {mu mu' mu'': MemStore} {pc k: Level} {T1 T2 T3: TimingList} {c: Command} 
      (expressionEvalProof: (@ExpressionBigStep binop_eval rel latticeProof e mu pc T1 TruePrimitive k))
      (commandProof: CommandBigStep c mu pc T2 mu')
      (restLoopProof: CommandBigStep (WhileCommand e c) mu' pc T3 mu'')
      (lowProof: rel k pc)
-  : CommandBigStep (WhileCommand e c) mu pc (SingleTiming WHILET +++ T1 +++ T2 +++ T3) mu''
+  : CommandBigStep (WhileCommand e c) mu pc (T1 +++ T2 +++ T3 +++ SingleTiming WHILET) mu''
 
 | AssnBigStepEq {e: Expression} {mu: MemStore} {x: Var} {pc k: Level} {T: TimingList} {n: Primitive}
     (eproof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T n k)
-  : CommandBigStep (AssnCommand x e) mu pc (SingleTiming ASSN +++ T) (MemUpdate mu x n k)
+  : CommandBigStep (AssnCommand x e) mu pc (SingleTiming (ASSN x) +++ T) (MemUpdate mu x n k)
                    
 | IfHighBigStep {e: Expression} {mu mu' mu'': MemStore} {pc kpc: Level} {n: Primitive} {T1 T2 T3: TimingList} {n: Primitive} {c1 c2: Command}
     (eProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T1 n kpc)
     (debProof1: DebranchBigStep (Debranch c1  (PrimToBool n) pc) mu kpc T2 mu')
     (debProof2: DebranchBigStep (Debranch c2  (negb (PrimToBool n)) pc) mu' kpc T3 mu'')
     (relProof: rel kpc pc -> False)
-  : CommandBigStep (IfCommand e c1 c2) mu pc (SingleTiming IF_HIGH +++ T1 +++ T2 +++ T3) mu'' 
+  : CommandBigStep (IfCommand e c1 c2) mu pc ( T1 +++ T2 +++ T3 +++ SingleTiming IF_HIGH) mu'' 
                    
 | IfLowBigStep
     {e: Expression} {mu mu': MemStore} {pc k: Level} {n: Primitive} {T1 T2: TimingList} (c1 c2: Command)
@@ -159,7 +159,7 @@ Inductive CommandBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primiti
     (relProof: rel k pc)
     (commandProof: let c := match n with | TruePrimitive => c1 | _ => c2 end in
                    CommandBigStep c mu pc T2 mu')
-  : CommandBigStep (IfCommand e c1 c2) mu pc (SingleTiming IF_LOW +++ T1 +++ T2) mu'
+  : CommandBigStep (IfCommand e c1 c2) mu pc ( T1 +++ T2 +++ SingleTiming IF_LOW) mu'
 with DebranchBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}: DebranchCommand -> MemStore -> Level -> TimingList -> MemStore -> Type :=
 
 | DebSkipBigStep
@@ -169,17 +169,17 @@ with DebranchBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} 
 | DebAssnTrueBigStep  {e: Expression} {l pc k: Level} {mu mu': MemStore} {T: TimingList} {n: Primitive}
     (x: Var)
     (evalProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T n k)
-  : DebranchBigStep (Debranch (AssnCommand x e) true l) mu pc (SingleTiming DEB_ASSN +++ T) (MemUpdate mu x n k) 
+  : DebranchBigStep (Debranch (AssnCommand x e) true l) mu pc (T +++ SingleTiming (DEB_ASSN x)) (MemUpdate mu x n k) 
                     
 | DebAssnFalseBigStep {e: Expression} {l pc k: Level} {mu: MemStore} {T: TimingList} {n: Primitive}
     (x: Var)
     (evalProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T n k)
-  : DebranchBigStep (Debranch (AssnCommand x e) false l) mu pc (SingleTiming DEB_ASSN +++ T) (MemUpdate mu x (fst (mu x)) k)
+  : DebranchBigStep (Debranch (AssnCommand x e) false l) mu pc (T +++ SingleTiming (DEB_ASSN x) ) (MemUpdate mu x (fst (mu x)) k)
                     
 | DebSeqBigStep {c1 c2: Command} {n: bool} {l: Level} {mu mu' mu'': MemStore} {l pc: Level} {T1 T2: TimingList}
     (p1: DebranchBigStep (Debranch c1 n l) mu pc T1 mu')
     (p2: DebranchBigStep (Debranch c2 n l) mu' pc T2 mu'')
-  : DebranchBigStep (Debranch (SeqCommand c1 c2) n l) mu pc (SingleTiming DEB_SEQ +++ T1 +++ T2) mu''
+  : DebranchBigStep (Debranch (SeqCommand c1 c2) n l) mu pc ( T1 +++ T2 +++ SingleTiming DEB_SEQ) mu''
                     
 | DebIfHighBigStep {e: Expression} {c1 c2: Command} {mu mu' mu'': MemStore} {l pc kl kpc: Level} {n: bool} {n': Primitive} {T1 T2 T3 T4: TimingList}
     (p1: @ExpressionBigStep binop_eval rel latticeProof e mu l T1 n' kl)
@@ -187,7 +187,7 @@ with DebranchBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} 
     (relProof: rel kl l -> False)
     (p3: DebranchBigStep (Debranch c1 (andb (PrimToBool n') n) l) mu kpc T3 mu')
     (p4: DebranchBigStep (Debranch c2 (andb (negb (PrimToBool n')) n) l) mu' kpc T4 mu'')
-  : DebranchBigStep (Debranch (IfCommand e c1 c2) n l) mu pc (SingleTiming DEB_IF_HIGH +++ T1 +++ T2 +++ T3 +++ T4) mu''
+  : DebranchBigStep (Debranch (IfCommand e c1 c2) n l) mu pc ( T1 +++ T2 +++ T3 +++ T4 +++ SingleTiming DEB_IF_HIGH) mu''
 | DebIfLowBigStep
     {e: Expression} {mu mu': MemStore} {pc k l: Level} {n: bool} {n': Primitive} {T1 T2: TimingList} (c1 c2: Command)
     (eProof: @ExpressionBigStep binop_eval rel latticeProof e mu l T1 n' k)
@@ -195,21 +195,21 @@ with DebranchBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} 
     (relProof: rel k l)
     (commandProof: let d := match n' with | TruePrimitive => (Debranch c1 n l) | _ => (Debranch c2 n l) end in
                    DebranchBigStep d mu pc T2 mu')
-  : DebranchBigStep (Debranch (IfCommand e c1 c2) n l) mu pc (SingleTiming DEB_IF_LOW +++ T1 +++ T2) mu'
+  : DebranchBigStep (Debranch (IfCommand e c1 c2) n l) mu pc ( T1 +++ T2 +++ SingleTiming DEB_IF_LOW) mu'
 | DebWhileFBigStep {e: Expression} {mu: MemStore} {k l: Level} {T: TimingList} {n': Primitive}
     (c: Command)
     (n: bool)
     (pc: Level)
     (expressionEvalProof: (@ExpressionBigStep binop_eval rel latticeProof e mu l T n' k))
     (falseProof: n' <> TruePrimitive)
-  : DebranchBigStep (Debranch (WhileCommand e c) n l) mu pc (SingleTiming DEB_WHILEF +++ T) mu
+  : DebranchBigStep (Debranch (WhileCommand e c) n l) mu pc (T +++ SingleTiming DEB_WHILEF) mu
       
 |  DebWhileTBigStep {e: Expression} {mu mu' mu'': MemStore} {pc l kl kpc: Level} {T1 T1' T2 T3: TimingList} {c: Command} {n: bool}
      (expressionEvalProof: (@ExpressionBigStep binop_eval rel latticeProof e mu l T1 TruePrimitive kl))
      (commandProof: DebranchBigStep (Debranch c n l) mu pc T2 mu')
      (restLoopProof: DebranchBigStep (Debranch (WhileCommand e c) n l) mu' pc T3 mu'')
      (lowProof: rel kl l)
-  : DebranchBigStep (Debranch (WhileCommand e c) n l) mu pc (SingleTiming DEB_WHILET +++ T1 +++ T2 +++ T3) mu''.
+  : DebranchBigStep (Debranch (WhileCommand e c) n l) mu pc ( T1 +++ T2 +++ T3 +++ SingleTiming DEB_WHILET) mu''.
 
                   
 Inductive ValueObservationalEquivalent {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}: Primitive -> Level -> Level -> Primitive -> Level -> Type :=
@@ -256,7 +256,7 @@ Qed.
 Lemma ExpressionLabelLowerBound: forall  {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel} {e: Expression} {mu: MemStore} {l k: Level} {T: TimingList}  {n: Primitive} (proof: @ExpressionBigStep binop_eval rel latticeProof e mu l T n k), rel l k. 
 Proof.
   intros. induction proof.
-  - destruct joinProof. assumption.
+  - destruct latticeProof; destruct OrdProof. apply rel_refl.
   - destruct joinProof. assumption.
   - destruct latticeProof. destruct OrdProof. destruct joinProof. apply (rel_trans _ _ _  IHproof1 pleft).
   
@@ -289,10 +289,7 @@ Proof.
 
   dependent induction e; dependent destruction p1; dependent destruction p2.
   
-  - 
-    pose proof (JoinEq latticeProof joinProof0 joinProof).
-    subst j. constructor; auto.
-
+  - constructor; auto.
   -  specialize (memEqProof x). destruct memEqProof.
     + subst. pose proof (JoinEq latticeProof joinProof joinProof0). subst. constructor; auto.
     + specialize (JoinHigh latticeProof (JoinSym latticeProof joinProof) l1High);
@@ -315,7 +312,7 @@ Inductive LoopLengthCommand {binop_eval: BinOp -> Primitive -> Primitive -> Prim
     (c: Command)
     (expressionEvalProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc T n k)
     (primProof: n <> TruePrimitive)
-  : LoopLengthCommand pc mu e c (SingleTiming WHILEF +++ T) mu 0
+  : LoopLengthCommand pc mu e c (T +++ SingleTiming WHILEF) mu 0
 
 | LoopLengthCommandSn {mu mu' mu'': MemStore} {e: Expression} {n: nat} {pc k: Level} {Te Tc Tw: TimingList} {c: Command}
     (expressionProof: @ExpressionBigStep binop_eval rel latticeProof e mu pc Te TruePrimitive k)
@@ -323,7 +320,7 @@ Inductive LoopLengthCommand {binop_eval: BinOp -> Primitive -> Primitive -> Prim
     (whileProof: @CommandBigStep binop_eval rel latticeProof (WhileCommand e c) mu' pc Tw mu'')
     (indProof: LoopLengthCommand pc mu' e c Tw mu'' n)
     (relProof: rel k pc)
-  : LoopLengthCommand pc mu e c (SingleTiming WHILET +++ Te +++ Tc +++ Tw) mu'' (S n).
+  : LoopLengthCommand pc mu e c ( Te +++ Tc +++ Tw +++ SingleTiming WHILET) mu'' (S n).
 
 Lemma AlwaysLoopLengthCommand {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
   forall {e: Expression} {c: Command} {mu mu': MemStore} {pc: Level} {T: TimingList},
@@ -364,7 +361,7 @@ Inductive LoopLengthDebranch {binop_eval: BinOp -> Primitive -> Primitive -> Pri
     (c: Command) (n: bool) (pc: Level)
     (expressionEvalProof: @ExpressionBigStep binop_eval rel latticeProof e mu l T n' k)
     (primProof: n' <> TruePrimitive)
-  : LoopLengthDebranch pc mu e c n l (SingleTiming DEB_WHILEF +++ T) mu 0
+  : LoopLengthDebranch pc mu e c n l (T +++ SingleTiming DEB_WHILEF) mu 0
 
 | LoopLengthDebranchSn {mu mu' mu'': MemStore} {e: Expression} {x: nat} {pc l kl: Level} {Te Tc Tw: TimingList} {c: Command} {n: bool}
     (expressionEvalProof: (@ExpressionBigStep binop_eval rel latticeProof e mu l Te TruePrimitive kl))
@@ -373,7 +370,7 @@ Inductive LoopLengthDebranch {binop_eval: BinOp -> Primitive -> Primitive -> Pri
     (indProof: LoopLengthDebranch pc mu' e c n l Tw mu'' x)
     (lowProof: rel kl l)
     
-  : LoopLengthDebranch pc mu e c n l (SingleTiming DEB_WHILET +++ Te +++ Tc +++ Tw) mu'' (S x).
+  : LoopLengthDebranch pc mu e c n l ( Te +++ Tc +++ Tw +++ SingleTiming DEB_WHILET) mu'' (S x).
 
 Lemma AlwaysLoopLengthDebranch {binop_eval: BinOp -> Primitive -> Primitive -> Primitive} {rel: Level -> Level -> Type} {latticeProof: JoinSemilattice rel}:
   forall {e: Expression} {c: Command} {n: bool} {mu mu': MemStore} {pc l: Level} {T: TimingList},
@@ -760,8 +757,8 @@ Definition StoreProjection (mu: MemStore) : NormalStore := fun x => fst (mu x).
 Definition NormalUpdate (nu: NormalStore) (x: Var) (n: Primitive) : NormalStore :=
   fun x' => if (var_eq_dec x x') then n else (nu x').
 Inductive ExpressionNormalBigStep {binop_eval: BinOp -> Primitive -> Primitive -> Primitive}: Expression -> NormalStore ->  Primitive -> Type :=
-| NormalConstBigStep (prim: Primitive) (k: Level) (nu: NormalStore):
-  ExpressionNormalBigStep (PrimitiveExpression prim k) nu prim 
+| NormalConstBigStep (prim: Primitive) (nu: NormalStore):
+  ExpressionNormalBigStep (PrimitiveExpression prim) nu prim 
                                                                                                                
 | NormalVarBigStep(x: Var) (nu: NormalStore)
   : ExpressionNormalBigStep (VarExpression x) nu (nu x)
