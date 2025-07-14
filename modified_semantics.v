@@ -83,7 +83,6 @@ Inductive Timing :=
 | CONST
 | VAR (v: Var)
 | OPER (oper: BinOp)
-| COMMA
 | SKIP
 | SEQ
 | WHILEF
